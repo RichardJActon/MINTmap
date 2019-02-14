@@ -32,6 +32,10 @@ my $subStr2 = -85;
 my $tRNAseqSpaceFile = "./tRNAseqSpace.fa";
 my $OtherAnnoFile = "./otherAnno.txt";
 my $tRNAfragsFile = "./tRNAfrags.txt";
+my $tRNAsubStrannoFile = "./tRNAsubStrannoFile.bed";
+
+# my @chr = (1..22,"X","Y","M");
+my @chr = ("T"); ##!!
 
 # Argument getting
 #######################################
@@ -66,7 +70,7 @@ pod2usage(1) if $help;
 
 # 100bp flank tRNA data hash ~ 
 # hg19-tRNA-100bp53.bed
-print STDERR "Reading tRNA annotation...\n";
+print STDERR "[".getTime()."] Reading tRNA annotation...\n";
 my @tRNAannoLines;
 open TRNAANNO, "$tRNAannoFile" or die "unable to open $tRNAannoFile";
 while (my $line = <TRNAANNO>) {
@@ -74,13 +78,13 @@ while (my $line = <TRNAANNO>) {
 	push @tRNAannoLines, $line;
 }
 close TRNAANNO or die "unable to close $tRNAannoFile";
-print STDERR "Read tRNA annotation\n";
+print STDERR "[".getTime()."] Read tRNA annotation\n";
 # 100bp flank fasta
 # hg19-tRNA-100bp53.fa
 
 my %tRNAseqs;
 my $tRNAname;
-print STDERR "Reading tRNA Sequences...\n";
+print STDERR "[".getTime()."] Reading tRNA Sequences...\n";
 open TRNASEQ, "$tRNAseqFile" or die "unable to open $tRNAseqFile";
 while (my $line = <TRNASEQ>) {
 	chomp $line;
@@ -92,7 +96,7 @@ while (my $line = <TRNASEQ>) {
 	}
 }
 close TRNASEQ or die "unable to close $tRNAseqFile";
-print STDERR "Read tRNA Sequences\n";
+print STDERR "[".getTime()."] Read tRNA Sequences\n";
 
 my %tRNAs = parsetRNAanno(\@tRNAannoLines);
 
@@ -112,7 +116,7 @@ foreach my $k (keys %tRNAs) { # reciprocal
 #######################################
 
 my $tRNAseqSpaceFasta;
-print STDERR "Generating tRNA substrings...\n";
+print STDERR "[".getTime()."] Generating tRNA substrings...\n";
 my @substrings;
 foreach my $tRNAname (keys %tRNAs) {
 	my $str;
@@ -126,27 +130,35 @@ foreach my $tRNAname (keys %tRNAs) {
 	# print "$k = $str\n";
 	push @substrings, @{getAllSubstrings($minLen,$maxLen,$str)};
 }
-#85,-85
 my %substr = map {$_ => ''} @substrings;
-print STDERR "Generated tRNA substrings\n";
+print STDERR "[".getTime()."] Generated tRNA substrings\n";
 
-print STDERR "Saving tRNA substrings...\n";
+# Substring printing
+#######################################
+
+#tRNAsubStrTrans
+# print STDERR Dumper %{tRNAsubStrAnno(\%tRNAs,$subStr1,$subStr2)};
+# print STDERR Dumper tRNAsubStrTrans($tRNAs{'tRNA-Tyr-GTA-chr1-127'});
+
+tRNAsubStrSave(\%tRNAs,$subStr1,$subStr2,$tRNAsubStrannoFile);
+
+# Substring printing
+#######################################
+
+print STDERR "[".getTime()."] Saving tRNA substrings...\n";
 my $tRNAseqsMD5 = Digest::MD5::md5_hex($tRNAseqSpaceFasta);
 open(my $tsfh, ">$tRNAseqSpaceFile") or die $!;
 #my $tRNAseqsMD5 = Digest::MD5->new->addfile($tsfh)->hexdigest;
 print $tsfh $tRNAseqSpaceFasta;
 close $tsfh or die $!;
-print STDERR "Saved tRNA substrings\n";
+print STDERR "[".getTime()."] Saved tRNA substrings\n";
 # print Dumper @substrings;
 # print Dumper %substr;
 
 # Search Genome for unique substrings
 #######################################
 
-# my @chr = (1..22,"X","Y","M");
-my @chr = ("T"); ##!!
-
-print STDERR "Matching \n";
+print STDERR "[".getTime()."] Matching ...\n";
 #my @chr = ("H100k6"); ##!!
 my %matches;
 $pl -> share(\%matches);
@@ -172,36 +184,122 @@ $pl -> foreach(\@chr, sub {
 	}
 });
 
-print STDERR "Matched \n";
+print STDERR "[".getTime()."] Matched \n";
 # print Dumper %matches;
+
+# print matches
+#######################################
 
 # map {
 # 	print STDOUT join "\t", @{$_};
 # 	print STDOUT "\n";
 # } @{matchesToBed(\%matches)};
-print STDERR "Formatting Matched \n";
+print STDERR "[".getTime()."] Formatting Matched ...\n";
 my $matchesString;
 map {
 	$matchesString .= join "\t", @{$_};
 	$matchesString .= "\n";
 } @{matchesToBed(\%matches)};
-print STDERR "Formatted Matched \n";
+print STDERR "[".getTime()."] Formatted Matched \n";
 #print Dumper @{matchesToBed(\%matches)};
-# ~~?? intersect with tRNA gene regions here or with bedtools
-# 
 # print STDOUT $matchesString;  
 
-#qx/echo "$matchesString" | bedtools intersect -a stdin -b ..\/tmp-tRNAlookupTest.bed -f 1 -c/;#$tRNAannoFile
-
-print STDERR "Intersecting \n";
+# intersect with tRNA gene regions here or with bedtools
+print STDERR "[".getTime()."] Intersecting ...\n";
 my @bedFrags = readpipe join("",
 	"echo \"$matchesString\" | ",
 	"bedtools intersect ",
 	"-a stdin ",
-	"-b $tRNAannoFile ", #$tRNAannoFile #..\/tmp-tRNAlookupTest.bed
+	"-b $tRNAsubStrannoFile ", #$tRNAannoFile #..\/tmp-tRNAlookupTest.bed
 	"-f 1 -c"
 );
-print STDERR "Intersected \n";
+print STDERR "[".getTime()."] Intersected \n";
+
+open TMP, ">./bedinterC.bed" or die $!;
+map {print TMP $_} @bedFrags;
+print TMP "\n";
+close TMP or die $!;
+# Annotate strings
+#######################################
+## generate other annotations
+# 5' 3' etc - defer
+print STDERR "[".getTime()."] Annotating ... \n";
+# if >0 tRNA space exclusive?
+# Y = 1, N = 0 or >1
+# >1 in additional in other annotation?
+#my @otherAnno;
+my $otherAnnoStr;
+map {
+	my $line = $_;
+	chomp $line;
+	my @cols = split "\t", $line;
+	if ($cols[6] == 1) {
+	 	#push @otherAnno, join "\t", $cols[3], "Unique";
+	 	$otherAnnoStr .= join("\t", $cols[3], "Unique"). "\n";
+	} elsif ($cols[6] == 0) {
+		#push @otherAnno, join "\t", $cols[3], "Non-unique";
+		$otherAnnoStr .= join("\t", $cols[3], "Non-unique"). "\n";
+	} else {
+		#push @otherAnno, join "\t", $cols[3], "tRNAspace_multi-mapping";
+		$otherAnnoStr .= join("\t", $cols[3], "tRNAspace_multi-mapping"). "\n";
+	}
+} @bedFrags;
+
+print STDERR "[".getTime()."] Annotated ...\n";
+
+# # print STDERR Dumper @otherAnno;
+
+# print Annotated strings
+#######################################
+
+print STDERR "[".getTime()."] Saving Annotated \n";
+my $OtherAnnoMD5 = Digest::MD5::md5_hex($otherAnnoStr);
+open(my $oafh, ">$OtherAnnoFile") or die $!;
+# my $OtherAnnoMD5 = Digest::MD5->new->addfile($oafh)->hexdigest;
+# print $oafh join "\n", @otherAnno;
+# print $oafh "\n";
+print $oafh $otherAnnoStr;
+close $oafh or die $!;
+print STDERR "[".getTime()."] Saved Annotated \n";
+
+# set exclusive values
+#######################################
+print STDERR "[".getTime()."] Marking Unique ...\n";
+#my @tRNAfrags;
+my $tRNAfrags;
+# $pl -> share(\@tRNAfrags);
+# $pl -> foreach(\@bedFrags, sub 
+map {
+	my $line = $_;
+	chomp $line;
+	my @cols = split "\t", $line;
+	if ($cols[6] == 1) {
+	 	#push @tRNAfrags, join "\t", $cols[3], "Y";
+	 	$tRNAfrags .= join("\t", $cols[3], "Y"). "\n";
+	} else {
+		#push @tRNAfrags, join "\t", $cols[3], "N";
+		$tRNAfrags .= join("\t", $cols[3], "N"). "\n";
+	}
+} @bedFrags;#);
+print STDERR "[".getTime()."] Marked Unique \n";
+
+# print fragments
+#######################################
+print STDERR "[".getTime()."] Saving Marked ...\n";
+open(my $tffh, ">$tRNAfragsFile") or die $!;
+print $tffh "#TRNASEQUENCES:$tRNAseqSpaceFile MD5SUM:$tRNAseqsMD5\n";
+print $tffh "#OTHERANNOTATIONS:$OtherAnnoFile MD5SUM:$OtherAnnoMD5\n";
+print $tffh $tRNAfrags;
+# print $tffh join "\n", @tRNAfrags;
+# print $tffh "\n";
+close $tffh or die $!;
+print STDERR "[".getTime()."] Saved Marked \n";
+
+
+print STDERR "[".getTime()."] COMPLETE\n";
+
+#$tRNAannoFile !! - need to account for substring
+
 # my @uniques = 
 # grep {
 # 	chomp $_;
@@ -209,71 +307,12 @@ print STDERR "Intersected \n";
 # 	$cols[6] == 1; # only fragment (fully -f 1) overlapped by a target region exactly once
 # } @bedFrags;
 
-## generate other annotations # MD%
-# 5' 3' etc - defer
-print STDERR "Annotating \n";
-my @otherAnno;
-$pl -> share(\@otherAnno);
-$pl -> foreach(\@bedFrags,sub {
-	my $line = $_;
-	chomp $line;
-	my @cols = split "\t", $line;
-	if ($cols[6] == 1) {
-	 	push @otherAnno, join "\t", $cols[3],"Unique";
-	} elsif ($cols[6] == 0) {
-		push @otherAnno, join "\t", $cols[3],"Non-unique";
-	} else {
-		push @otherAnno, join "\t", $cols[3],"tRNAspace_multi-mapping";
-	}
-});
-print STDERR "Annotated \n";
-
-print STDERR "Saving Annotated \n";
-open(my $oafh, ">$OtherAnnoFile") or die $!;
-my $OtherAnnoMD5 = Digest::MD5->new->addfile($oafh)->hexdigest;
-print $oafh join "\n", @otherAnno;
-print $oafh "\n";
-close $oafh or die $!;
-print STDERR "Saved Annotated \n";
-
-
-print STDERR "Marking Unique \n";
-my @tRNAfrags;
-$pl -> share(\@tRNAfrags);
-$pl -> foreach(\@bedFrags,sub {
-	my $line = $_;
-	chomp $line;
-	my @cols = split "\t", $line;
-	if ($cols[6] == 1) {
-	 	push @tRNAfrags, join "\t", $cols[3],"Y";
-	} else {
-		push @tRNAfrags, join "\t", $cols[3],"N";
-	}
-});
-print STDERR "Marked Unique \n";
-
-print STDERR "Saving Marked \n";
-open(my $tffh, ">$tRNAfragsFile") or die $!;
-print $tffh "#TRNASEQUENCES:$tRNAseqSpaceFasta MD5SUM:$tRNAseqsMD5\n";
-print $tffh "#OTHERANNOTATIONS:$OtherAnnoFile MD5SUM:$OtherAnnoMD5\n";
-print $tffh join "\n", @tRNAfrags;
-print $tffh "\n";
-close $tffh or die $!;
-print STDERR "Saved Marked \n";
-## generate list - head with 
-# '#TRNASEQUENCES:filename.fa MD5SUM:nnn'
-# '#OTHERANNOTATIONS:OtherAnnotations.txt MD5SUM:nnn'
-
-#$tRNAannoFile !! - need to account for substring
-
 # map {
 # 	print STDOUT join "\t", $_; 
 # 	print STDOUT "\n"; 
 # } @uniques;
 
-# if >0 tRNA space exclusive?
-# Y = 1, N = 0 or >1
-# >1 in additional in other annotation?
+
 
 # getAnnotations seq mod behaviour issues?
 
